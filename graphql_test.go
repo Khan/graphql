@@ -153,6 +153,59 @@ func TestClient_Query_emptyVariables(t *testing.T) {
 	}
 }
 
+// Test that response headers are returned when performing a query
+func TestClient_QueryAndReturnHeader(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Additional-Header", "somevalue")
+		mustWrite(w, `{"data": {"user": {"name": "Gopher"}}}`)
+	})
+	client := graphql.NewClient("/graphql", &http.Client{Transport: localRoundTripper{handler: mux}})
+
+	var q struct {
+		User struct {
+			Name string
+		}
+	}
+	header, err := client.QueryAndReturnHeader(context.Background(), &q, map[string]interface{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	headerValues := header["X-Additional-Header"]
+	if len(headerValues) != 1 && headerValues[0] != "somevalue" {
+		t.Errorf("X-Additional-Header not present in response header, got: %v", header)
+	}
+}
+
+// Test that response headers are returned when performing a mutation
+func TestClient_MutateAndReturnHeader(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/graphql", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Additional-Header", "somevalue")
+		mustWrite(w, `{"data": {"user": {"name": "Gopher"}}}`)
+	})
+	client := graphql.NewClient("/graphql", &http.Client{Transport: localRoundTripper{handler: mux}})
+
+	var q struct {
+		User struct {
+			Name string
+		}
+	}
+	header, err := client.MutateAndReturnHeader(context.Background(), &q, map[string]interface{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	headerValues := header["X-Additional-Header"]
+	if len(headerValues) != 1 && headerValues[0] != "somevalue" {
+		t.Errorf("X-Additional-Header not present in response header, got: %v", header)
+	}
+}
+
 // localRoundTripper is an http.RoundTripper that executes HTTP transactions
 // by using handler directly, instead of going over an HTTP connection.
 type localRoundTripper struct {

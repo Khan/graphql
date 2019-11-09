@@ -34,6 +34,11 @@ func NewClient(url string, httpClient *http.Client) *Client {
 // with a query derived from q, populating the response into it.
 // q should be a pointer to struct that corresponds to the GraphQL schema.
 func (c *Client) Query(ctx context.Context, q interface{}, variables map[string]interface{}) error {
+	_, err := c.do(ctx, queryOperation, q, variables)
+	return err
+}
+
+func (c *Client) QueryAndReturnHeader(ctx context.Context, q interface{}, variables map[string]interface{}) (http.Header, error) {
 	return c.do(ctx, queryOperation, q, variables)
 }
 
@@ -41,11 +46,16 @@ func (c *Client) Query(ctx context.Context, q interface{}, variables map[string]
 // with a mutation derived from m, populating the response into it.
 // m should be a pointer to struct that corresponds to the GraphQL schema.
 func (c *Client) Mutate(ctx context.Context, m interface{}, variables map[string]interface{}) error {
+	_, err := c.do(ctx, mutationOperation, m, variables)
+	return err
+}
+
+func (c *Client) MutateAndReturnHeader(ctx context.Context, m interface{}, variables map[string]interface{}) (http.Header, error) {
 	return c.do(ctx, mutationOperation, m, variables)
 }
 
 // do executes a single GraphQL operation.
-func (c *Client) do(ctx context.Context, op operationType, v interface{}, variables map[string]interface{}) error {
+func (c *Client) do(ctx context.Context, op operationType, v interface{}, variables map[string]interface{}) (http.Header, error) {
 	var query string
 	switch op {
 	case queryOperation:
@@ -63,16 +73,16 @@ func (c *Client) do(ctx context.Context, op operationType, v interface{}, variab
 	var buf bytes.Buffer
 	err := json.NewEncoder(&buf).Encode(in)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	resp, err := ctxhttp.Post(ctx, c.httpClient, c.url, "application/json", &buf)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := ioutil.ReadAll(resp.Body)
-		return fmt.Errorf("non-200 OK status code: %v body: %q", resp.Status, body)
+		return resp.Header, fmt.Errorf("non-200 OK status code: %v body: %q", resp.Status, body)
 	}
 	var out struct {
 		Data   *json.RawMessage
@@ -82,19 +92,19 @@ func (c *Client) do(ctx context.Context, op operationType, v interface{}, variab
 	err = json.NewDecoder(resp.Body).Decode(&out)
 	if err != nil {
 		// TODO: Consider including response body in returned error, if deemed helpful.
-		return err
+		return resp.Header, err
 	}
 	if out.Data != nil {
 		err := jsonutil.UnmarshalGraphQL(*out.Data, v)
 		if err != nil {
 			// TODO: Consider including response body in returned error, if deemed helpful.
-			return err
+			return resp.Header, err
 		}
 	}
 	if len(out.Errors) > 0 {
-		return out.Errors
+		return resp.Header, out.Errors
 	}
-	return nil
+	return resp.Header, nil
 }
 
 // errors represents the "errors" array in a response from a GraphQL server.
